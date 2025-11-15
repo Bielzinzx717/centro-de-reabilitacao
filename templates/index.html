@@ -19,7 +19,7 @@
         }
         
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             background: white;
             border-radius: 16px;
@@ -112,6 +112,99 @@
             margin-bottom: 30px;
         }
         
+        
+        .cliente-card {
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        
+        .cliente-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        
+        .cliente-info h3 {
+            color: #2d3748;
+            font-size: 1.4em;
+            margin-bottom: 8px;
+        }
+        
+        .cliente-details {
+            color: #718096;
+            font-size: 0.95em;
+        }
+        
+        .cliente-details span {
+            margin-right: 20px;
+        }
+        
+        .cliente-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .fichas-list {
+            margin-top: 16px;
+        }
+        
+        .ficha-item {
+            background: #f7fafc;
+            border-left: 4px solid #667eea;
+            padding: 16px;
+            margin-bottom: 12px;
+            border-radius: 8px;
+            position: relative;
+        }
+        
+        .ficha-item.finalizada {
+            border-left-color: #4299e1;
+            background: #ebf8ff;
+        }
+        
+        .ficha-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .ficha-dates {
+            font-weight: 600;
+            color: #2d3748;
+        }
+        
+        .ficha-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 0.85em;
+        }
+        
+        .fichas-count {
+            color: #718096;
+            font-size: 0.9em;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+        
+        .no-fichas {
+            color: #a0aec0;
+            font-style: italic;
+            padding: 20px;
+            text-align: center;
+        }
+        
         table {
             width: 100%;
             border-collapse: collapse;
@@ -183,7 +276,7 @@
             gap: 8px;
         }
         
-        /* Adicionar estilos para cards de estatísticas */
+        
         .stats-container {
             display: flex;
             gap: 20px;
@@ -220,7 +313,7 @@
             opacity: 0.9;
         }
         
-        /* Adicionar estilos para formulário de busca e filtros */
+        
         .search-filter-container {
             background-color: #f7fafc;
             padding: 24px;
@@ -350,7 +443,6 @@
             {% endif %}
         {% endwith %}
         
-        <!-- Adicionar cards de estatísticas -->
         <div class="stats-container">
             <div class="stat-card">
                 <div class="stat-number">{{ total }}</div>
@@ -358,15 +450,14 @@
             </div>
             <div class="stat-card ativo">
                 <div class="stat-number">{{ ativos }}</div>
-                <div class="stat-label">Em Tratamento</div>
+                <div class="stat-label">Fichas Ativas</div>
             </div>
             <div class="stat-card finalizado">
                 <div class="stat-number">{{ finalizados }}</div>
-                <div class="stat-label">Finalizados</div>
+                <div class="stat-label">Fichas Finalizadas</div>
             </div>
         </div>
         
-        <!-- Adicionar formulário de busca e filtros -->
         <div class="search-filter-container">
             <div class="search-filter-title">🔍 Buscar e Filtrar Clientes</div>
             <form method="GET" action="/" class="filter-form">
@@ -400,7 +491,6 @@
                 </div>
             </form>
             
-            <!-- Mostrar filtros ativos -->
             {% if busca or status or data_inicio or data_fim %}
             <div class="active-filters">
                 <strong>Filtros ativos:</strong>
@@ -427,52 +517,63 @@
         </div>
         
         {% if clientes %}
-        <!-- Adicionar contador de resultados -->
         <div class="results-count">
             Mostrando {{ clientes|length }} cliente(s)
         </div>
         
-        <table>
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Nome</th>
-                    <th>CPF</th>
-                    <th>Email</th>
-                    <th>Telefone</th>
-                    <th>Data Entrada</th>
-                    <th>Data Saída</th>
-                    <th>Status</th>
-                    <th>Ações</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for cliente in clientes %}
-                <tr>
-                    <td>{{ cliente[0] }}</td>
-                    <td><strong>{{ cliente[1] }}</strong></td>
-                    <td>{{ cliente[2] }}</td>
-                    <td>{{ cliente[3] }}</td>
-                    <td>{{ cliente[4] }}</td>
-                    <td>{{ cliente[5] }}</td>
-                    <td>{{ cliente[6] if cliente[6] else '-' }}</td>
-                    <td>
-                        {% if cliente[6] %}
-                            <span class="status-finalizado">Finalizado</span>
-                        {% else %}
-                            <span class="status-ativo">Em Tratamento</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        <div class="action-buttons">
-                            <a href="/editar/{{ cliente[0] }}" class="btn btn-edit">✏️ Editar</a>
-                            <a href="/deletar/{{ cliente[0] }}" class="btn btn-delete" onclick="return confirm('Tem certeza que deseja excluir este cliente?')">🗑️ Excluir</a>
+        
+        {% for cliente in clientes %}
+        <div class="cliente-card">
+            <div class="cliente-header">
+                <div class="cliente-info">
+                    <h3>{{ cliente.nome }}</h3>
+                    <div class="cliente-details">
+                        <span>📋 CPF: {{ cliente.cpf }}</span>
+                        <span>📧 {{ cliente.email }}</span>
+                        <span>📞 {{ cliente.telefone }}</span>
+                    </div>
+                </div>
+                <div class="cliente-actions">
+                    <a href="/cliente/{{ cliente.id }}" class="btn btn-primary btn-small">👁️ Ver Detalhes</a>
+                    <a href="/nova-ficha/{{ cliente.id }}" class="btn btn-edit btn-small">➕ Nova Ficha</a>
+                    <a href="/editar/{{ cliente.id }}" class="btn btn-edit btn-small">✏️ Editar</a>
+                    <a href="/deletar/{{ cliente.id }}" class="btn btn-delete btn-small" onclick="return confirm('Tem certeza? Isso excluirá todas as fichas do cliente!')">🗑️ Excluir</a>
+                </div>
+            </div>
+            
+            {% if cliente.fichas %}
+            <div class="fichas-list">
+                <div class="fichas-count">📋 {{ cliente.fichas|length }} ficha(s) cadastrada(s)</div>
+                {% for ficha in cliente.fichas[:3] %}
+                <div class="ficha-item {% if ficha.data_saida %}finalizada{% endif %}">
+                    <div class="ficha-header">
+                        <div class="ficha-dates">
+                            <span>📅 Entrada: {{ ficha.data_entrada }}</span>
+                            {% if ficha.data_saida %}
+                                <span> | Saída: {{ ficha.data_saida }}</span>
+                                <span class="status-finalizado">Finalizado</span>
+                            {% else %}
+                                <span class="status-ativo">Em Tratamento</span>
+                            {% endif %}
                         </div>
-                    </td>
-                </tr>
+                        <div class="ficha-actions">
+                            <a href="/editar-ficha/{{ ficha.id }}" class="btn btn-edit btn-small">✏️</a>
+                        </div>
+                    </div>
+                </div>
                 {% endfor %}
-            </tbody>
-        </table>
+                {% if cliente.fichas|length > 3 %}
+                <p style="color: #718096; font-size: 0.9em; text-align: center;">
+                    + {{ cliente.fichas|length - 3 }} ficha(s) a mais. <a href="/cliente/{{ cliente.id }}">Ver todas</a>
+                </p>
+                {% endif %}
+            </div>
+            {% else %}
+            <div class="no-fichas">Nenhuma ficha cadastrada</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+        
         {% else %}
         <div class="empty-state">
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">

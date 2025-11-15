@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cadastrar Cliente - Centro de Reabilitação</title>
+    <title>Editar Ficha - {{ ficha[5] }}</title>
     <style>
         * {
             margin: 0;
@@ -28,7 +28,6 @@
         }
         
         header {
-            text-align: center;
             margin-bottom: 40px;
             padding-bottom: 20px;
             border-bottom: 3px solid #667eea;
@@ -44,17 +43,17 @@
             color: #718096;
         }
         
-        .alert {
-            padding: 15px 20px;
+        .info-box {
+            background-color: #bee3f8;
+            border-left: 4px solid #4299e1;
+            padding: 16px 20px;
             border-radius: 8px;
-            margin-bottom: 20px;
-            font-weight: 500;
+            margin-bottom: 24px;
+            color: #2c5282;
         }
         
-        .alert-error {
-            background-color: #fed7d7;
-            color: #742a2a;
-            border-left: 4px solid #e53e3e;
+        .info-box strong {
+            font-size: 1.1em;
         }
         
         .form-group {
@@ -73,7 +72,7 @@
             color: #e53e3e;
         }
         
-        input {
+        input, textarea {
             width: 100%;
             padding: 12px 16px;
             border: 2px solid #e2e8f0;
@@ -83,10 +82,15 @@
             font-family: inherit;
         }
         
-        input:focus {
+        input:focus, textarea:focus {
             outline: none;
             border-color: #667eea;
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        textarea {
+            resize: vertical;
+            min-height: 100px;
         }
         
         .btn {
@@ -128,7 +132,6 @@
             color: #718096;
             margin-top: 4px;
         }
-        
         
         .medicamentos-section {
             background: #f7fafc;
@@ -220,13 +223,26 @@
             padding: 20px;
             font-style: italic;
         }
+        
+        .alert {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+        
+        .alert-error {
+            background-color: #fed7d7;
+            color: #742a2a;
+            border-left: 4px solid #e53e3e;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>➕ Cadastrar Novo Cliente</h1>
-            <p class="subtitle">Preencha os dados do paciente e sua primeira ficha</p>
+            <h1>✏️ Editar Ficha</h1>
+            <p class="subtitle">Atualizar dados da ficha de tratamento</p>
         </header>
         
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -239,59 +255,43 @@
             {% endif %}
         {% endwith %}
         
-        <form method="POST" id="formCadastro">
-            <div class="form-group">
-                <label for="nome">Nome Completo <span class="required">*</span></label>
-                <input type="text" id="nome" name="nome" required>
-            </div>
-            
-            <div class="form-group">
-                <label for="cpf">CPF <span class="required">*</span></label>
-                <input type="text" id="cpf" name="cpf" placeholder="000.000.000-00" required maxlength="14">
-                <p class="help-text">Apenas números (11 dígitos)</p>
-            </div>
-            
-            <div class="form-group">
-                <label for="email">Email <span class="required">*</span></label>
-                <input type="email" id="email" name="email" placeholder="exemplo@email.com" required>
-            </div>
-            
-            <div class="form-group">
-                <label for="telefone">Telefone <span class="required">*</span></label>
-                <input type="tel" id="telefone" name="telefone" placeholder="(00) 00000-0000" required>
-            </div>
-            
+        <div class="info-box">
+            <strong>Cliente:</strong> {{ ficha[5] }}<br>
+            <strong>CPF:</strong> {{ ficha[6] }}
+        </div>
+        
+        <form method="POST" id="formEditarFicha">
             <div class="form-group">
                 <label for="data_entrada">Data de Entrada na Clínica <span class="required">*</span></label>
-                <input type="date" id="data_entrada" name="data_entrada" required>
+                <input type="date" id="data_entrada" name="data_entrada" value="{{ ficha[2] }}" required>
             </div>
             
             <div class="form-group">
                 <label for="data_saida">Data de Saída da Clínica</label>
-                <input type="date" id="data_saida" name="data_saida">
+                <input type="date" id="data_saida" name="data_saida" value="{{ ficha[3] if ficha[3] else '' }}">
                 <p class="help-text">Deixe em branco se o paciente ainda está em tratamento</p>
             </div>
             
             <div class="form-group">
                 <label for="observacoes">Observações</label>
-                <textarea id="observacoes" name="observacoes" rows="3" placeholder="Observações sobre o tratamento..."></textarea>
+                <textarea id="observacoes" name="observacoes">{{ ficha[4] if ficha[4] else '' }}</textarea>
             </div>
-            
             
             <div class="medicamentos-section">
                 <div class="section-title">
                     💊 Medicamentos
                 </div>
                 <div id="medicamentos-container">
-                    <div class="no-medicamentos">Nenhum medicamento adicionado. Clique em "Adicionar Medicamento" para começar.</div>
+                    <div class="no-medicamentos">Carregando medicamentos...</div>
                 </div>
                 <button type="button" class="btn-add-med" onclick="adicionarMedicamento()">➕ Adicionar Medicamento</button>
             </div>
             
             <input type="hidden" id="medicamentos_data" name="medicamentos_data" value="[]">
+            <input type="hidden" id="medicamentos-data-json" value="{{ medicamentos_json }}">
             
-            <button type="submit" class="btn btn-primary">💾 Cadastrar Cliente</button>
-            <a href="/" class="btn btn-secondary">← Voltar</a>
+            <button type="submit" class="btn btn-primary">💾 Salvar Alterações</button>
+            <a href="/cliente/{{ ficha[1] }}" class="btn btn-secondary">← Voltar</a>
         </form>
     </div>
     
@@ -357,15 +357,15 @@
             `).join('');
         }
         
-        document.getElementById('formCadastro').addEventListener('submit', function(e) {
+        document.getElementById('formEditarFicha').addEventListener('submit', function(e) {
             document.getElementById('medicamentos_data').value = JSON.stringify(medicamentos);
         });
         
-        
-        const medicamentosDataInput = document.getElementById('medicamentos_data');
-        if (medicamentosDataInput.value) {
-            inicializarMedicamentos(medicamentosDataInput.value);
-        }
+       
+        document.addEventListener('DOMContentLoaded', function() {
+            const dadosMedicamentos = document.getElementById('medicamentos-data-json')?.textContent || '[]';
+            inicializarMedicamentos(dadosMedicamentos);
+        });
     </script>
 </body>
 </html>

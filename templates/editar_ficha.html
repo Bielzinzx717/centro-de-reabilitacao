@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Editar Ficha - {{ ficha[5] }}</title>
+    <link rel="stylesheet" href="/static/styles.css">
     <style>
         * {
             margin: 0;
@@ -31,6 +32,9 @@
             margin-bottom: 40px;
             padding-bottom: 20px;
             border-bottom: 3px solid #667eea;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         
         h1 {
@@ -41,6 +45,18 @@
         
         .subtitle {
             color: #718096;
+        }
+        
+        .theme-toggle {
+            background: none;
+            border: none;
+            font-size: 1.5em;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .theme-toggle:hover {
+            transform: scale(1.1);
         }
         
         .info-box {
@@ -243,6 +259,7 @@
         <header>
             <h1>✏️ Editar Ficha</h1>
             <p class="subtitle">Atualizar dados da ficha de tratamento</p>
+            <button class="theme-toggle" id="themeToggle" title="Alternar Tema">🌙</button>
         </header>
         
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -295,6 +312,7 @@
         </form>
     </div>
     
+    <script src="/static/theme.js"></script>
     <script>
         let medicamentos = [];
         
@@ -361,7 +379,6 @@
             document.getElementById('medicamentos_data').value = JSON.stringify(medicamentos);
         });
         
-       
         document.addEventListener('DOMContentLoaded', function() {
             const dadosMedicamentos = document.getElementById('medicamentos-data-json')?.textContent || '[]';
             inicializarMedicamentos(dadosMedicamentos);

@@ -1,12 +1,28 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, make_response, send_file
 import sqlite3
 from datetime import datetime
 import re
 import json
 import threading
+import csv
+from io import StringIO
+import os
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = 'chave_secreta_reabilitacao_2024'
+
+UPLOAD_FOLDER = 'uploads'
+ALLOWED_EXTENSIONS = {'pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'txt'}
+
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 _thread_local = threading.local()
 
@@ -21,7 +37,6 @@ def get_db():
         conn.row_factory = sqlite3.Row
         _thread_local.db = conn
     return _thread_local.db
-
 
 def init_db():
     conn = get_db()
@@ -61,14 +76,40 @@ def init_db():
         )
     ''')
     
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS familiares (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente_id INTEGER NOT NULL,
+            nome TEXT NOT NULL,
+            parentesco TEXT NOT NULL,
+            telefone TEXT NOT NULL,
+            email TEXT,
+            endereco TEXT,
+            observacoes TEXT,
+            FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE CASCADE
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS documentos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente_id INTEGER NOT NULL,
+            nome_arquivo TEXT NOT NULL,
+            nome_original TEXT NOT NULL,
+            tipo_documento TEXT NOT NULL,
+            tamanho INTEGER,
+            data_upload TEXT DEFAULT CURRENT_TIMESTAMP,
+            observacoes TEXT,
+            FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE CASCADE
+        )
+    ''')
+    
     conn.commit()
 
-# Validar CPF
 def validar_cpf(cpf):
     cpf = re.sub(r'\D', '', cpf)
     return len(cpf) == 11
 
-# Validar Email
 def validar_email(email):
     pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
     return re.match(pattern, email) is not None
@@ -79,11 +120,17 @@ def index():
         conn = get_db()
         cursor = conn.cursor()
         
-        
         busca = request.args.get('busca', '')
         status = request.args.get('status', '')
         data_inicio = request.args.get('data_inicio', '')
         data_fim = request.args.get('data_fim', '')
+        
+        # Limpar fichas órfãs (sem cliente)
+        cursor.execute('''
+            DELETE FROM fichas 
+            WHERE cliente_id NOT IN (SELECT id FROM clientes)
+        ''')
+        conn.commit()
         
         query = '''
             SELECT c.id, c.nome, c.cpf, c.email, c.telefone,
@@ -94,18 +141,15 @@ def index():
         '''
         params = []
         
-        
         if busca:
             query += ' AND (c.nome LIKE ? OR c.cpf LIKE ? OR c.email LIKE ?)'
             busca_param = f'%{busca}%'
             params.extend([busca_param, busca_param, busca_param])
         
-        
         if status == 'ativo':
-            query += ' AND f.data_saida IS NULL'
+            query += ' AND f.data_saida IS NULL AND f.id IS NOT NULL'
         elif status == 'finalizado':
             query += ' AND f.data_saida IS NOT NULL'
-        
         
         if data_inicio:
             query += ' AND f.data_entrada >= ?'
@@ -133,7 +177,7 @@ def index():
                     'fichas': []
                 }
             
-            if row[5]:  
+            if row[5]:
                 clientes_dict[cliente_id]['fichas'].append({
                     'id': row[5],
                     'data_entrada': row[6],
@@ -143,14 +187,21 @@ def index():
         
         clientes = list(clientes_dict.values())
         
-        # Calcular estatísticas
-        cursor.execute('SELECT COUNT(DISTINCT cliente_id) FROM fichas')
+        cursor.execute('SELECT COUNT(*) FROM clientes')
         total = cursor.fetchone()[0]
         
-        cursor.execute('SELECT COUNT(*) FROM fichas WHERE data_saida IS NULL')
+        cursor.execute('''
+            SELECT COUNT(*) FROM fichas 
+            WHERE data_saida IS NULL 
+            AND cliente_id IN (SELECT id FROM clientes)
+        ''')
         ativos = cursor.fetchone()[0]
         
-        cursor.execute('SELECT COUNT(*) FROM fichas WHERE data_saida IS NOT NULL')
+        cursor.execute('''
+            SELECT COUNT(*) FROM fichas 
+            WHERE data_saida IS NOT NULL
+            AND cliente_id IN (SELECT id FROM clientes)
+        ''')
         finalizados = cursor.fetchone()[0]
         
         return render_template('index.html', 
@@ -177,7 +228,6 @@ def cadastrar():
         data_saida = request.form.get('data_saida', '').strip() or None
         observacoes = request.form.get('observacoes', '').strip()
         
-        
         if not nome or not cpf or not email or not telefone or not data_entrada:
             flash('Todos os campos obrigatórios devem ser preenchidos!', 'error')
             return redirect(url_for('cadastrar'))
@@ -188,6 +238,11 @@ def cadastrar():
         except:
             medicamentos = []
         
+        familiares_json = request.form.get('familiares_data', '[]')
+        try:
+            familiares = json.loads(familiares_json)
+        except:
+            familiares = []
         
         if not validar_cpf(cpf):
             flash('CPF inválido! Deve conter 11 dígitos.', 'error')
@@ -203,25 +258,20 @@ def cadastrar():
             conn = get_db()
             cursor = conn.cursor()
             
+            cursor.execute('SELECT id, nome FROM clientes WHERE cpf = ?', (cpf_limpo,))
+            cliente_existente = cursor.fetchone()
+            
+            if cliente_existente:
+                flash(f'Erro: CPF já cadastrado para o cliente "{cliente_existente[1]}". Use a opção "Nova Ficha" para adicionar uma nova internação.', 'error')
+                return redirect(url_for('cadastrar'))
+            
             cursor.execute('BEGIN IMMEDIATE')
             
-            
-            try:
-                cursor.execute('''
-                    INSERT INTO clientes (nome, cpf, email, telefone)
-                    VALUES (?, ?, ?, ?)
-                ''', (nome, cpf_limpo, email, telefone))
-                cliente_id = cursor.lastrowid
-                novo_cliente = True
-            except sqlite3.IntegrityError:
-                cursor.execute('SELECT id FROM clientes WHERE cpf = ?', (cpf_limpo,))
-                resultado = cursor.fetchone()
-                if resultado:
-                    cliente_id = resultado[0]
-                    novo_cliente = False
-                else:
-                    raise
-            
+            cursor.execute('''
+                INSERT INTO clientes (nome, cpf, email, telefone)
+                VALUES (?, ?, ?, ?)
+            ''', (nome, cpf_limpo, email, telefone))
+            cliente_id = cursor.lastrowid
             
             cursor.execute('''
                 INSERT INTO fichas (cliente_id, data_entrada, data_saida, observacoes)
@@ -229,26 +279,39 @@ def cadastrar():
             ''', (cliente_id, data_entrada, data_saida, observacoes))
             ficha_id = cursor.lastrowid
             
-           
             for med in medicamentos:
-                if med.get('nome') and med.get('dosagem'):
+                nome_med = med.get('nome', '').strip()
+                if nome_med:
+                    dosagem = med.get('dosagem', '').strip()
+                    frequencia = med.get('frequencia', '').strip()
+                    obs_med = med.get('observacoes', '').strip()
+                    
                     cursor.execute('''
                         INSERT INTO medicamentos (ficha_id, nome, dosagem, frequencia, observacoes)
                         VALUES (?, ?, ?, ?, ?)
-                    ''', (ficha_id, med['nome'], med['dosagem'], med.get('frequencia', ''), med.get('observacoes', '')))
+                    ''', (ficha_id, nome_med, dosagem, frequencia, obs_med))
+            
+            for fam in familiares:
+                nome_fam = fam.get('nome', '').strip()
+                if nome_fam:
+                    parentesco = fam.get('parentesco', '').strip()
+                    telefone_fam = fam.get('telefone', '').strip()
+                    email_fam = fam.get('email', '').strip()
+                    endereco = fam.get('endereco', '').strip()
+                    obs_fam = fam.get('observacoes', '').strip()
+                    
+                    cursor.execute('''
+                        INSERT INTO familiares (cliente_id, nome, parentesco, telefone, email, endereco, observacoes)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (cliente_id, nome_fam, parentesco, telefone_fam, email_fam, endereco, obs_fam))
             
             conn.commit()
-            
-            if novo_cliente:
-                flash('Novo cliente cadastrado com sucesso!', 'success')
-            else:
-                flash('Cliente com este CPF já existe no sistema. Nova ficha criada!', 'info')
-            
+            flash('Novo cliente cadastrado com sucesso!', 'success')
             return redirect(url_for('ver_cliente', cliente_id=cliente_id))
             
         except sqlite3.IntegrityError as e:
             conn.rollback()
-            flash('Erro de integridade no banco de dados! Verifique os dados e tente novamente.', 'error')
+            flash(f'Erro de integridade no banco de dados: {str(e)}', 'error')
             return redirect(url_for('cadastrar'))
         except Exception as e:
             conn.rollback()
@@ -290,11 +353,16 @@ def nova_ficha(cliente_id):
             ficha_id = cursor.lastrowid
             
             for med in medicamentos:
-                if med.get('nome') and med.get('dosagem'):
+                nome_med = med.get('nome', '').strip()
+                if nome_med:
+                    dosagem = med.get('dosagem', '').strip()
+                    frequencia = med.get('frequencia', '').strip()
+                    obs_med = med.get('observacoes', '').strip()
+                    
                     cursor.execute('''
                         INSERT INTO medicamentos (ficha_id, nome, dosagem, frequencia, observacoes)
                         VALUES (?, ?, ?, ?, ?)
-                    ''', (ficha_id, med['nome'], med['dosagem'], med.get('frequencia', ''), med.get('observacoes', '')))
+                    ''', (ficha_id, nome_med, dosagem, frequencia, obs_med))
             
             conn.commit()
             flash('Nova ficha criada com sucesso!', 'success')
@@ -318,7 +386,6 @@ def ver_cliente(cliente_id):
         flash('Cliente não encontrado!', 'error')
         return redirect(url_for('index'))
     
-    
     cursor.execute('''
         SELECT id, data_entrada, data_saida, observacoes, created_at
         FROM fichas
@@ -326,7 +393,6 @@ def ver_cliente(cliente_id):
         ORDER BY created_at DESC
     ''', (cliente_id,))
     fichas = cursor.fetchall()
-    
     
     fichas_com_medicamentos = []
     for ficha in fichas:
@@ -346,7 +412,23 @@ def ver_cliente(cliente_id):
             'medicamentos': medicamentos
         })
     
-    return render_template('ver_cliente.html', cliente=cliente, fichas=fichas_com_medicamentos)
+    cursor.execute('''
+        SELECT id, nome, parentesco, telefone, email, endereco, observacoes
+        FROM familiares
+        WHERE cliente_id = ?
+        ORDER BY nome
+    ''', (cliente_id,))
+    familiares = cursor.fetchall()
+    
+    cursor.execute('''
+        SELECT id, nome_original, tipo_documento, tamanho, data_upload, observacoes
+        FROM documentos
+        WHERE cliente_id = ?
+        ORDER BY data_upload DESC
+    ''', (cliente_id,))
+    documentos = cursor.fetchall()
+    
+    return render_template('ver_cliente.html', cliente=cliente, fichas=fichas_com_medicamentos, familiares=familiares, documentos=documentos)
 
 @app.route('/editar/<int:id>', methods=['GET', 'POST'])
 def editar(id):
@@ -357,6 +439,12 @@ def editar(id):
         nome = request.form['nome']
         email = request.form['email']
         telefone = request.form['telefone']
+        
+        familiares_json = request.form.get('familiares_data', '[]')
+        try:
+            familiares = json.loads(familiares_json)
+        except:
+            familiares = []
         
         if not validar_email(email):
             flash('Email inválido!', 'error')
@@ -369,6 +457,23 @@ def editar(id):
                 SET nome=?, email=?, telefone=?
                 WHERE id=?
             ''', (nome, email, telefone, id))
+            
+            cursor.execute('DELETE FROM familiares WHERE cliente_id=?', (id,))
+            
+            for fam in familiares:
+                nome_fam = fam.get('nome', '').strip()
+                if nome_fam:
+                    parentesco = fam.get('parentesco', '').strip()
+                    telefone_fam = fam.get('telefone', '').strip()
+                    email_fam = fam.get('email', '').strip()
+                    endereco = fam.get('endereco', '').strip()
+                    obs_fam = fam.get('observacoes', '').strip()
+                    
+                    cursor.execute('''
+                        INSERT INTO familiares (cliente_id, nome, parentesco, telefone, email, endereco, observacoes)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (id, nome_fam, parentesco, telefone_fam, email_fam, endereco, obs_fam))
+            
             conn.commit()
             flash('Cliente atualizado com sucesso!', 'success')
             return redirect(url_for('ver_cliente', cliente_id=id))
@@ -379,7 +484,12 @@ def editar(id):
     
     cursor.execute('SELECT * FROM clientes WHERE id=?', (id,))
     cliente = cursor.fetchone()
-    return render_template('editar.html', cliente=cliente)
+    
+    cursor.execute('SELECT * FROM familiares WHERE cliente_id=?', (id,))
+    familiares = cursor.fetchall()
+    familiares_json = json.dumps([dict(f) for f in familiares])
+    
+    return render_template('editar.html', cliente=cliente, familiares_json=familiares_json)
 
 @app.route('/editar-ficha/<int:ficha_id>', methods=['GET', 'POST'])
 def editar_ficha(ficha_id):
@@ -418,15 +528,19 @@ def editar_ficha(ficha_id):
                 WHERE id=?
             ''', (data_entrada, data_saida, observacoes, ficha_id))
             
-            
             cursor.execute('DELETE FROM medicamentos WHERE ficha_id=?', (ficha_id,))
             
             for med in medicamentos:
-                if med.get('nome') and med.get('dosagem'):
+                nome_med = med.get('nome', '').strip()
+                if nome_med:
+                    dosagem = med.get('dosagem', '').strip()
+                    frequencia = med.get('frequencia', '').strip()
+                    obs_med = med.get('observacoes', '').strip()
+                    
                     cursor.execute('''
                         INSERT INTO medicamentos (ficha_id, nome, dosagem, frequencia, observacoes)
                         VALUES (?, ?, ?, ?, ?)
-                    ''', (ficha_id, med['nome'], med['dosagem'], med.get('frequencia', ''), med.get('observacoes', '')))
+                    ''', (ficha_id, nome_med, dosagem, frequencia, obs_med))
             
             conn.commit()
             flash('Ficha atualizada com sucesso!', 'success')
@@ -436,11 +550,11 @@ def editar_ficha(ficha_id):
             flash(f'Erro ao atualizar ficha: {str(e)}', 'error')
             return redirect(url_for('editar_ficha', ficha_id=ficha_id))
     
-   
     cursor.execute('SELECT * FROM medicamentos WHERE ficha_id=?', (ficha_id,))
     medicamentos = cursor.fetchall()
+    medicamentos_json = json.dumps([dict(m) for m in medicamentos])
     
-    return render_template('editar_ficha.html', ficha=ficha, medicamentos=medicamentos)
+    return render_template('editar_ficha.html', ficha=ficha, medicamentos_json=medicamentos_json)
 
 @app.route('/deletar/<int:id>')
 def deletar(id):
@@ -455,7 +569,11 @@ def deletar(id):
         conn.rollback()
         flash(f'Erro ao deletar: {str(e)}', 'error')
     
-    return redirect(url_for('index'))
+    response = redirect(url_for('index'))
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 @app.route('/deletar-ficha/<int:ficha_id>')
 def deletar_ficha(ficha_id):
@@ -472,13 +590,146 @@ def deletar_ficha(ficha_id):
             cursor.execute('DELETE FROM fichas WHERE id=?', (ficha_id,))
             conn.commit()
             flash('Ficha removida com sucesso!', 'success')
-            return redirect(url_for('ver_cliente', cliente_id=cliente_id))
+            response = redirect(url_for('ver_cliente', cliente_id=cliente_id))
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+            return response
     except Exception as e:
         conn.rollback()
         flash(f'Erro ao deletar ficha: {str(e)}', 'error')
     
     flash('Ficha não encontrada!', 'error')
     return redirect(url_for('index'))
+
+@app.route('/exportar-csv')
+def exportar_csv():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT c.nome, c.cpf, c.email, c.telefone,
+                   f.data_entrada, f.data_saida, f.observacoes,
+                   m.nome as medicamento, m.dosagem, m.frequencia
+            FROM clientes c
+            LEFT JOIN fichas f ON c.id = f.cliente_id
+            LEFT JOIN medicamentos m ON f.id = m.ficha_id
+            ORDER BY c.nome, f.data_entrada DESC
+        ''')
+        
+        dados = cursor.fetchall()
+        
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['Nome', 'CPF', 'Email', 'Telefone', 'Data Entrada', 'Data Saida', 'Observacoes', 'Medicamento', 'Dosagem', 'Frequencia'])
+        
+        for row in dados:
+            writer.writerow(row)
+        
+        output.seek(0)
+        response = make_response(output.getvalue())
+        response.headers['Content-Disposition'] = 'attachment; filename=clientes_export.csv'
+        response.headers['Content-Type'] = 'text/csv; charset=utf-8'
+        
+        return response
+    except Exception as e:
+        flash(f'Erro ao exportar: {str(e)}', 'error')
+        return redirect(url_for('index'))
+
+@app.route('/upload-documento/<int:cliente_id>', methods=['POST'])
+def upload_documento(cliente_id):
+    if 'arquivo' not in request.files:
+        flash('Nenhum arquivo selecionado!', 'error')
+        return redirect(url_for('ver_cliente', cliente_id=cliente_id))
+    
+    arquivo = request.files['arquivo']
+    
+    if arquivo.filename == '':
+        flash('Nenhum arquivo selecionado!', 'error')
+        return redirect(url_for('ver_cliente', cliente_id=cliente_id))
+    
+    if arquivo and allowed_file(arquivo.filename):
+        tipo_documento = request.form.get('tipo_documento', 'Outro')
+        observacoes = request.form.get('observacoes_doc', '')
+        
+        nome_original = secure_filename(arquivo.filename)
+        extensao = nome_original.rsplit('.', 1)[1].lower()
+        nome_arquivo = f"cliente_{cliente_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{extensao}"
+        
+        caminho_arquivo = os.path.join(app.config['UPLOAD_FOLDER'], nome_arquivo)
+        arquivo.save(caminho_arquivo)
+        
+        tamanho = os.path.getsize(caminho_arquivo)
+        
+        try:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO documentos (cliente_id, nome_arquivo, nome_original, tipo_documento, tamanho, observacoes)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (cliente_id, nome_arquivo, nome_original, tipo_documento, tamanho, observacoes))
+            conn.commit()
+            flash('Documento enviado com sucesso!', 'success')
+        except Exception as e:
+            flash(f'Erro ao salvar documento: {str(e)}', 'error')
+            if os.path.exists(caminho_arquivo):
+                os.remove(caminho_arquivo)
+    else:
+        flash('Tipo de arquivo não permitido! Use: PDF, JPG, PNG, DOC, DOCX, TXT', 'error')
+    
+    return redirect(url_for('ver_cliente', cliente_id=cliente_id))
+
+@app.route('/download-documento/<int:doc_id>')
+def download_documento(doc_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT nome_arquivo, nome_original FROM documentos WHERE id=?', (doc_id,))
+        documento = cursor.fetchone()
+        
+        if not documento:
+            flash('Documento não encontrado!', 'error')
+            return redirect(url_for('index'))
+        
+        caminho_arquivo = os.path.join(app.config['UPLOAD_FOLDER'], documento[0])
+        
+        if os.path.exists(caminho_arquivo):
+            return send_file(caminho_arquivo, as_attachment=True, download_name=documento[1])
+        else:
+            flash('Arquivo não encontrado no servidor!', 'error')
+            return redirect(url_for('index'))
+    except Exception as e:
+        flash(f'Erro ao baixar documento: {str(e)}', 'error')
+        return redirect(url_for('index'))
+
+@app.route('/deletar-documento/<int:doc_id>')
+def deletar_documento(doc_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT nome_arquivo, cliente_id FROM documentos WHERE id=?', (doc_id,))
+        documento = cursor.fetchone()
+        
+        if not documento:
+            flash('Documento não encontrado!', 'error')
+            return redirect(url_for('index'))
+        
+        cliente_id = documento[1]
+        caminho_arquivo = os.path.join(app.config['UPLOAD_FOLDER'], documento[0])
+        
+        cursor.execute('DELETE FROM documentos WHERE id=?', (doc_id,))
+        conn.commit()
+        
+        if os.path.exists(caminho_arquivo):
+            os.remove(caminho_arquivo)
+        
+        flash('Documento removido com sucesso!', 'success')
+        return redirect(url_for('ver_cliente', cliente_id=cliente_id))
+    except Exception as e:
+        flash(f'Erro ao deletar documento: {str(e)}', 'error')
+        return redirect(url_for('index'))
 
 if __name__ == '__main__':
     init_db()

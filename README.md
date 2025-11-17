@@ -1,62 +1,90 @@
-# 🏥 Sistema de Centro de Reabilitação
+# Sistema de Gerenciamento de Reabilitação
 
-Sistema CRUD completo desenvolvido em **Python** e **HTML puro** para gerenciamento de clientes de um centro de reabilitação.
+Sistema completo em Python/Flask para gerenciamento de clientes em centro de reabilitação.
 
-## 📋 Funcionalidades
+## Funcionalidades
 
-- ✅ Cadastro de clientes com validação de CPF e email
-- ✅ Listagem de todos os clientes cadastrados
-- ✅ Edição de dados dos clientes
-- ✅ Exclusão de clientes
-- ✅ Controle de data de entrada e saída da clínica
-- ✅ Status visual (Em Tratamento / Finalizado)
-- ✅ Banco de dados SQLite (sem necessidade de servidor externo)
+### Segurança
+- ✅ Sistema de login com autenticação
+- ✅ Senhas criptografadas com hash
+- ✅ Sessões seguras
+- ✅ Soft delete (dados não são perdidos)
+- ✅ Auditoria completa de todas as ações
 
-## 🚀 Como Executar
+### Validações
+- ✅ Validação completa de CPF
+- ✅ Validação de email
+- ✅ Máscaras de input para CPF e telefone
+- ✅ Validação de datas (saída não pode ser antes da entrada)
 
-### 1. Instalar Dependências
+### Funcionalidades Principais
+- ✅ Cadastro de clientes com fichas de tratamento
+- ✅ Gestão de medicamentos por ficha
+- ✅ **Contatos de emergência/familiares por ficha**
+- ✅ Busca e filtros avançados
+- ✅ Paginação
+- ✅ Exportação para CSV
+- ✅ Geração de relatórios em PDF
+- ✅ Histórico completo de tratamentos
 
+### Performance
+- ✅ Queries otimizadas
+- ✅ Índices no banco de dados
+- ✅ Conexões com pool
+
+## Instalação
+
+1. Instale as dependências:
 \`\`\`bash
-pip install -r requirements.txt
+pip install flask reportlab
 \`\`\`
 
-### 2. Executar o Servidor
-
+2. Execute o sistema:
 \`\`\`bash
 python app.py
 \`\`\`
 
-### 3. Acessar o Sistema
+3. Acesse no navegador:
+\`\`\`
+http://localhost:5000
+\`\`\`
 
-Abra seu navegador e acesse: **http://localhost:5000**
+## Credenciais Padrão
 
-## 📊 Dados Armazenados
+**Usuário:** admin
+**Senha:** admin123
 
-- **Nome Completo**
-- **CPF** (único, não pode ser duplicado)
-- **Email**
-- **Telefone**
-- **Data de Entrada na Clínica**
-- **Data de Saída da Clínica** (opcional)
+## Estrutura do Banco de Dados
 
-## 🛠️ Tecnologias Utilizadas
+- **usuarios** - Usuários do sistema
+- **clientes** - Dados cadastrais dos clientes
+- **fichas** - Fichas de tratamento
+- **contatos_emergencia** - Contatos de emergência/familiares por ficha
+- **medicamentos** - Medicamentos por ficha
+- **auditoria** - Log de todas as ações
 
-- **Backend**: Python 3 + Flask
-- **Frontend**: HTML5 + CSS3 puro
-- **Banco de Dados**: SQLite3
-- **Validações**: CPF (11 dígitos) e Email (formato válido)
+## Contatos de Emergência
 
-## 📱 Interface
+Cada ficha pode ter múltiplos contatos de emergência com:
+- Nome completo
+- Parentesco (mãe, pai, irmão, etc)
+- Telefone principal
+- Telefone secundário
+- Email
+- Endereço completo
+- Observações
 
-- Design moderno e responsivo
-- Gradiente roxo profissional
-- Alertas de sucesso e erro
-- Tabela com status visual dos pacientes
-- Formulários com validação
+Isso permite que em caso de emergência, a equipe médica tenha acesso rápido aos contatos dos familiares do paciente.
 
-## 🔒 Segurança
+## Melhorias Implementadas
 
-- Validação de CPF no backend
-- Validação de email no backend
-- Proteção contra CPFs duplicados
-- Confirmação antes de excluir registros
+1. **Autenticação segura** com login/logout
+2. **Soft delete** - dados deletados não são perdidos
+3. **Máscaras visuais** para CPF e telefone
+4. **Validação avançada** de CPF e datas
+5. **Contatos de emergência** para cada ficha
+6. **Auditoria completa** de todas as ações
+7. **Exportação** de dados em CSV
+8. **Relatórios** em PDF
+9. **Paginação** para listas grandes
+10. **Interface moderna** e responsiva
